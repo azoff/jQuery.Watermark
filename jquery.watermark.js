@@ -1,105 +1,148 @@
-/**
- * Copyright (C) 2009 Jonathan Azoff <jon@azoffdesign.com>
+/*!
+ * Watermark v1.1.0
+ *  A jQuery Plugin for adding watermarks to text-based form fields.
+ *  http://azoffdesign.com/watermark
  *
- * This script is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2, or (at your option) any
- * later version.
+ * Intended for use with the latest jQuery
+ *  http://code.jquery.com/jquery-latest.min.js
  *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * Copyright 2010, Jonathan Azoff
+ * Dual licensed under the MIT or GPL Version 2 licenses.
+ *  http://jquery.org/license
  *
- * CHANGELOG 1.0.1
- *   => Changed listeners so that they handle text dragged into the boxes (thanks to Jury for this one!)
- *
- * CHANGELOG 1.0.2
- *   => Simplified dragging support
- *   => Got rid of wierd focus initialization behavior
- *
- * CHANGELOG 1.0.3
- *   => Fixed css inherit bug for ie7 (thanks ambrauer)
- *   
- * CHANGELOG 1.0.4
- *   => Added fix to clear input before submission if field is empty (thanks alice)  
- *
- * jQuery.watermark v1.0.44444444444444444444444444444444444444444444 - A jQuery plugin that turns a texxt input or textarea into a "watermarked" field
- * 
- * @usage		call $("selector").watermark(text) on any element to turn the element(s) into watermarked fields. 
- *				**See http: *azoffdesign.com/plugins/js/watermark for an example.
- * @param 		optionalText	the text used in the watermark, defaults to title attribute if none specified (optional)
- * @returns 	a jQuery array of watermarked fields
- * @note 		make sure that if you don't supply text to the method that the elements at least have a title attribute. also, 
- *				the plugin only works on input and textarea elements; anything else will throw an exception
- * @depends 	just make sure you have jQuery, no CSS needed. If you want to modify the color of the watermark just change the
- *				value of the color variable below.
+ * Date: Wednesday, April 4th 2010
  */
-(function($){
-	var text, color = "#AAA";
-	
+
+/* 
+ * Usage:
+ * 
+ * $(selector).watermark([options]);
+ *  "options" is an optional JavaScript object that you may pass if you would like to customize
+ *  the watermark application. Below is a list of properties that you may set on
+ *  the options object and their respective effect:
+ *   - options.color	{String} The color to use for the watermarked text (default "#AAA").
+ *   - options.text		{String} The text to use for the watermark, overrides the default (default uses title attribute)
+ *
+ * Notes:
+ * 
+ * The plug-in applies a submit handler to any parent forms so that watermarked text is not submitted when the form is.
+ * However, this may not prevent all cases of form submission (such as AJAX serialization + submission) so caution should be     
+ * taken on the server-side to ensure validity of the submitted values.       
+ *
+ * Changelog:
+ *
+ * 1.1.0 
+ *   - Updated license
+ *	 - Refactored to prevent memory leaks, maximize code reuse
+ *   - Added jslint to the build process
+ *	 - Namespaced code
+ *
+ * 1.0.4
+ *   - Added fix to clear input before submission if field is empty (thanks alice)
+ *
+ * 1.0.3
+ *   - Fixed css inherit bug for ie7 (thanks ambrauer) *
+ *
+ * 1.0.2
+ *   - Simplified dragging support
+ *   - Refactored focus initialization behavior 
+ *
+ * 1.0.1
+ *   - Improved listeners so that they handle text dragged into the boxes (thanks to Jury for this one!)
+ *   
+ */
+
+/*jslint onevar: true, strict: true */
+/*global jQuery: false */
+"use strict";
+
+(function($, w){
+
 	// public exposed watermark extension
-	$.fn.watermark = function(optionalText) {
-		text = optionalText;
-		return this.each(applyWatermarkHandlers);
-	}
+	w = $.fn.watermark = function(options) {
+		return this.each(function(){
+			w.init($(this), options);
+		});
+	};
 	
-	// applies the basic watermark handlers to the element
-	function applyWatermarkHandlers() {
-		var $this = $(this);
-		var currentText = text || $this.attr("title");
-		var currentForm = $this.closest("form");
+	// events watermark listens to
+	w.events = {
+		on: "blur",
+		off: "focus drop"
+	};
 	
-		if(!currentText || currentText.length == 0)
-				throw "jQuery.watermark() Error: Watermarked elements must at least have a title attribute if no watermarked text is provided to the method.";
-		if(!$this.is("textarea, [type=text], [type=password]"))
-			throw "jQuery.watermark() Error: Watermarked elements must be a form field that accepts text input.";
+	// reusable constants and strings
+	w.constants = {
+		color: "#AAA",
+		css: "color", // cause I'm anal
+		key: "w",
+		applied: "watermarked",
+		watermarkable: "textarea,input[type='text'],input[type='password']"
+	};
+	
+	// constructor for each watermarkable element
+	w.init = function(obj, options) {
 		
-		// add this watermarked field to the current form's check list
-		if( !currentForm.data("inputs") )
-			currentForm.data("inputs", [$this]);
-		else 
-			currentForm.data("inputs").push($this)
+		if(obj.is(w.constants.watermarkable) && !obj.data(w.constants.applied)) {
+		
+			options = $.extend({
+				text: obj.attr("title"),
+				color: w.constants.color						
+			}, (options || {}));
 
-		// attach the submission handler if necessary
-		if( !currentForm.data("submit") ) {
-			currentForm.submit(function(){
-				currentForm.data("inputs").each(function(){
-					if( this.data("w") )
-						this.val("");
-				});
-				return true;
-			}).data("submit", true);
+			obj.closest("form").bind("submit", obj, w.onSubmit);
+			
+			// attach handlers
+			obj.bind(w.events.on, options, w.on)
+			   .bind(w.events.off, options, w.off);
+			
+			// apply the watermark
+			w.on.call(obj, {data:options});
+			
+			obj.data(w.constants.applied, true);
+			
 		}
 
-		$this
-			.attr("title", "")
-			.data("text", currentText)
-			.data("w", true)
-			.blur(watermarkOn)
-			.focus(watermarkOff)
-			.bind("drop", watermarkOff)
-			.css("color", color)
-			.val(currentText);
-	}
-
-	// focus handler for watermarked elements
-	function watermarkOn() {
-		var $this = $(this);
-		if($this.val().length == 0 && !$this.data("w")) {
-			$this.data("w", true).css("color", color).val($this.data("text"));
-		}
-	}
+	};
 	
-	// blur handler for watermarked elements
-	function watermarkOff(event) {
-		var $this = $(this);
-		var val = (event.originalEvent && event.originalEvent.dataTransfer) ?
-						event.originalEvent.dataTransfer.getData("Text") : // drag and drop
-						"" ; // blur
-		if($this.data("w")) {
-			$this.data("w", false).css("color", "").val(val);
+	// applies the watermark
+	w.on = function(event, obj, options) {
+		obj = $(this);
+		options = event.data;
+		if(obj.val().length === 0 && !obj.data(w.constants.key)) {
+			
+			obj.data(w.constants.key, true)
+			   .css(w.constants.css, options.color)
+			   .val(options.text);
+			
 		}
-	}	
+	};
+	
+	// removes the watermark
+	w.off = function(event, obj, options) {
+		obj = $(this);
+		options = event.data;
+		if(obj.data(w.constants.key)) {
+			
+			obj.data(w.constants.key, false).css(w.constants.css, "");
+			
+			// capture drag and drop
+			if (event.originalEvent && event.originalEvent.dataTransfer)  {
+				obj.val(event.originalEvent.dataTransfer.getData("Text"));
+			} else {
+				obj.val("");
+			}
+	
+		}
+	};
+	
+	// clears watermarked elements on parent form submission event
+	w.onSubmit = function(event, obj) {
+		obj = event.data;
+		if (obj.data(w.constants.key)) {
+			obj.val("");
+		}
+		return true;
+	};	
 	
 })(jQuery);
